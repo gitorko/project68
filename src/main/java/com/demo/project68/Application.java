@@ -1,43 +1,62 @@
 package com.demo.project68;
 
-import java.time.Duration;
-import java.util.Random;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
-
-import org.springframework.boot.CommandLineRunner;
+import io.micrometer.core.annotation.Timed;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Metrics;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.SpringApplication;
+import org.springframework.boot.actuate.autoconfigure.metrics.MeterRegistryCustomizer;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.EnableAspectJAutoProxy;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 
-import io.micrometer.core.instrument.MeterRegistry;
-import lombok.extern.slf4j.Slf4j;
+import javax.annotation.PostConstruct;
+import java.util.Random;
+import java.util.concurrent.TimeUnit;
 
 @SpringBootApplication
 @Slf4j
 public class Application {
-
-    private final ScheduledExecutorService executorService = Executors.newScheduledThreadPool(1);
-
     public static void main(String[] args) {
         SpringApplication.run(Application.class, args);
     }
+}
 
+@RestController
+@RequestMapping("/api")
+@Slf4j
+class AppController {
+
+    @Timed("hello.api.time")
+    @GetMapping("/hello")
+    public String sayHello() throws InterruptedException {
+        RegistryConfig.helloApiCounter.increment();
+        int sleepTime = new Random().nextInt(10);
+        log.info("Sleeping for seconds: {}", sleepTime);
+        TimeUnit.SECONDS.sleep(sleepTime);
+        return "Hello, Sleep for " + sleepTime + " Seconds!";
+    }
+}
+
+@Configuration
+@EnableAspectJAutoProxy
+class RegistryConfig {
+
+    public static Counter helloApiCounter;
 
     @Bean
-    CommandLineRunner runner(MeterRegistry mr) {
-        return args -> {
-
-            this.executorService.scheduleAtFixedRate(new Runnable() {
-                @Override
-                public void run() {
-                    System.out.println("test");
-                    int sleepTime = new Random().nextInt(60);
-                    mr.timer("transform-photo-task").record(Duration.ofSeconds(sleepTime));
-                }
-            }, 5, 5, TimeUnit.SECONDS);
-        };
+    MeterRegistryCustomizer<MeterRegistry> configurer(@Value("${spring.application.name}") String applicationName) {
+        return registry -> registry.config().commonTags("application", applicationName);
     }
 
+    @PostConstruct
+    public void postInit() {
+        helloApiCounter = Metrics.counter("hello.api.count", "type", "order");
+    }
 }
